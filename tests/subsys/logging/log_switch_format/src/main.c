@@ -8,9 +8,11 @@
 #include <zephyr/logging/log.h>
 #include "mock_backend.h"
 #include <zephyr/sys/printk.h>
+
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/logging/log_output.h>
 #include <zephyr/logging/log_output_dict.h>
+#include <zephyr/logging/log_output_custom.h>
 #include <zephyr/ztest.h>
 
 #define LOG_MODULE_NAME log_switch_format
@@ -24,7 +26,7 @@ void log_msgs(void)
 	/* standard print */
 	LOG_ERR("Error message example.");
 
-#if CONFIG_LOG_MODE_DEFERRED
+#if CONFIG_LOG_MODE_DEFERRED && !(CONFIG_LOG_CUSTOM_FORMAT_SUPPORT)
 	/*
 	 * When deferred logging is enabled, the work is being performed by
 	 * another thread. The semaphore my_sem gives that thread time to process
@@ -76,7 +78,6 @@ void test_log_switch_format_success_case(void)
 
 	log_msgs();
 	validate_log_type(raw_data_str, log_type);
-
 }
 
 void test_log_switch_format_set(void)
@@ -105,7 +106,6 @@ void test_log_switch_format_set(void)
 	ret = log_backend_format_set(backend, log_type);
 
 	zassert_equal(ret, -EINVAL, "Log type not supported, Invalid value returned");
-
 }
 
 void test_log_switch_format_set_all_active_backends(void)
@@ -127,22 +127,25 @@ void test_log_switch_format_set_all_active_backends(void)
 void test_log_switch_format_func_t_get(void)
 {
 	const log_format_func_t expected_values[] = {
-	[LOG_OUTPUT_TEXT] = IS_ENABLED(CONFIG_LOG_OUTPUT) ?
-						log_output_msg_process : NULL,
-	[LOG_OUTPUT_SYST] = IS_ENABLED(CONFIG_LOG_MIPI_SYST_ENABLE) ?
-						log_output_msg_syst_process : NULL,
-	[LOG_OUTPUT_DICT] = IS_ENABLED(CONFIG_LOG_DICTIONARY_SUPPORT) ?
-						log_dict_output_msg_process : NULL
+		[LOG_OUTPUT_TEXT] = IS_ENABLED(CONFIG_LOG_OUTPUT) ? log_output_msg_process : NULL,
+		[LOG_OUTPUT_SYST] = IS_ENABLED(CONFIG_LOG_MIPI_SYST_ENABLE)
+					    ? log_output_msg_syst_process
+					    : NULL,
+		[LOG_OUTPUT_DICT] = IS_ENABLED(CONFIG_LOG_DICTIONARY_SUPPORT)
+					    ? log_dict_output_msg_process
+					    : NULL,
+		[LOG_OUTPUT_CUSTOM] = IS_ENABLED(CONFIG_LOG_CUSTOM_FORMAT_SUPPORT)
+					      ? log_custom_output_msg_process
+					      : NULL,
 	};
 
 	zassert_equal(log_format_table_size(), ARRAY_SIZE(expected_values),
-					       "Update test for expected_values table");
+		      "Update test for expected_values table");
 
 	for (int i = 0; i < ARRAY_SIZE(expected_values); i++) {
 		zassert_equal(log_format_func_t_get(i), expected_values[i],
-							"Log Format Not supported");
+			      "Log Format Not supported");
 	}
-
 }
 
 void test_main(void)

@@ -112,6 +112,10 @@ if(NOT CONFIG_LOG_MODE_MINIMAL)
     zephyr_sources(log_output_dict.c)
   endif()
 
+  if(CONFIG_LOG_CUSTOM_FORMAT_SUPPORT)
+    zephyr_sources(log_output_custom.c)
+  endif()
+
 else()
   zephyr_sources(log_minimal.c)
 endif()
