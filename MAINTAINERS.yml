@@ -973,6 +973,37 @@ Release Notes:
   labels:
     - "area: Neural Networks"
 
+<<<<<<< HEAD
+=======
+"Drivers: Regulators":
+  status: maintained
+  maintainers:
+    - gmarull
+  collaborators:
+    - danieldegrasse
+  files:
+    - drivers/regulator/
+    - include/zephyr/drivers/regulator/
+    - include/zephyr/drivers/regulator.h
+    - include/zephyr/dt-bindings/regulator/
+    - tests/drivers/regulator/
+    - doc/hardware/peripherals/regulators.rst
+  labels:
+    - "area: Regulators"
+
+"Drivers: Retained Memory":
+  status: maintained
+  maintainers:
+    - nordicjm
+  files:
+    - drivers/retained_mem/
+    - dts/bindings/retained_mem/
+    - include/zephyr/drivers/retained_mem.h
+    - tests/drivers/retained_mem/
+  labels:
+    - "area: Retained Memory"
+
+>>>>>>> 02059bc692 (MAINTAINERS: Add retained memory section and assign to self)
 "Drivers: PCI":
   status: maintained
   maintainers:
