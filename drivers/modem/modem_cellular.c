@@ -1918,13 +1918,28 @@ DT_INST_FOREACH_STATUS_OKAY(MODEM_CELLULAR_DEVICE_SWIR_HL7800)
 DT_INST_FOREACH_STATUS_OKAY(MODEM_CELLULAR_DEVICE_TELIT_ME910G1)
 #undef DT_DRV_COMPAT
 
+int cellular_get_modem_info(const struct device *dev, enum cellular_modem_info_type type, char *info, size_t size) {
+	int rc = 0;
 
-int cellular_get_modem_info(const struct device *dev, struct cellular_modem_info * modem_info) {
 	struct modem_cellular_data * data = (struct modem_cellular_data*)dev->data;
 
-	memcpy(&modem_info->imei[0], data->imei[0], sizeof(modem_info->imei));
-	memcpy(&modem_info->imsi[0], data->imsi[0], sizeof(modem_info->imsi));
-	memcpy(&modem_info->iccid[0], data->iccid[0], sizeof(modem_info->iccid));
+	switch(type)
+	{
+		case CELLULAR_MODEM_INFO_IMEI:
+			memcpy(info, &data->imei[0], MIN(size, sizeof(data->imei)));
+		break;
+		case CELLULAR_MODEM_INFO_IMSI:
+			memcpy(info, &data->imsi[0], MIN(size, sizeof(data->imsi)));
+		break;
+		case CELLULAR_MODEM_INFO_ICCID:
+			memcpy(info, &data->iccid[0], MIN(size, sizeof(data->iccid)));
+		break;
+		default:
+			rc = -ENODATA;
+		break;
+	}
+
+	return rc;
 }
 
 int cellular_get_signal(const struct device *dev, struct cellular_signal * signal) {
@@ -1934,6 +1949,5 @@ int cellular_get_signal(const struct device *dev, struct cellular_signal * signa
 		return -ENODATA;
 	}
 )
-	modem_info->rssi = data->rssi;
-	modem_info->ber = data->ber;
+	signal->rssi = data->rssi;
 }

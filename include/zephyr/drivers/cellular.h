@@ -27,12 +27,6 @@
 extern "C" {
 #endif
 
-#define CELLULAR_MODEM_INFO_IMSI_SIZE 15
-#define CELLULAR_MODEM_INFO_IMEI_SIZE 16
-#define CELLULAR_MODEM_INFO_ICCID_SIZE 21
-#define CELLULAR_MODEM_INFO_MODEL_SIZE 16
-#define CELLULAR_MODEM_INFO_MANUFACTURER_SIZE 10
-
 /** Cellular access technologies */
 enum cellular_access_technology {
 	CELLULAR_ACCESS_TECHNOLOGY_GSM = 0,
@@ -58,25 +52,28 @@ struct cellular_network {
 	uint16_t size;
 };
 
+enum cellular_signal_quality {
+	CELLULAR_MODEM_SIGNAL_EXCELLENT,
+	CELLULAR_MODEM_SIGNAL_GOOD,
+	CELLULAR_MODEM_SIGNAL_BAD,
+};
+
 struct cellular_signal {
 	/* RSSI signal */
 	int16_t rssi;
-	/* Bit Error Rate */
-	uint8_t ber;
+	/* Signal quality */
+	enum cellular_signal_quality quality;
+	/* Signal percentage */
+	uint8_t percentage;
 };
 
-struct cellular_modem_info
-{
+enum cellular_modem_info_type {
 	/* International Mobile Equipment Identity */
-	uint8_t imei[CELLULAR_MODEM_INFO_IMEI_SIZE];
-	/* GSM model as a string */
-	uint8_t model[CELLULAR_MODEM_INFO_MODEL_SIZE];
-	/* Manufacturer name as a string */
-	uint8_t manufacturer[CELLULAR_MODEM_INFO_MANUFACTURER_SIZE];
+	CELLULAR_MODEM_INFO_IMEI,
 	/* International Mobile Subscriber Identity */
-	uint8_t imsi[CELLULAR_MODEM_INFO_IMSI_SIZE];
+	CELLULAR_MODEM_INFO_IMSI,
 	/* Integrated Circuit Card Identification Number (SIM) */
-	uint8_t iccid[CELLULAR_MODEM_INFO_ICCID_SIZE];
+	CELLULAR_MODEM_INFO_ICCID,
 };
 
 /**
@@ -138,9 +135,10 @@ int cellular_get_signal(const struct device *dev, struct cellular_signal * signa
  *
  * @retval 0 if successful.
  * @retval -ENOTSUP if API is not supported by cellular network device.
+ * @retval -ENODATA if modem does not provide info requested
  * @retval Negative errno-code otherwise.
  */
-int cellular_get_modem_info(const struct device *dev, struct cellular_modem_info * modem_info);
+int cellular_get_modem_info(const struct device *dev, enum cellular_modem_info_type type, char *info, size_t size);
 
 #ifdef __cplusplus
 }
