@@ -27,6 +27,12 @@
 extern "C" {
 #endif
 
+#define CELLULAR_MODEM_INFO_IMSI_SIZE 15
+#define CELLULAR_MODEM_INFO_IMEI_SIZE 16
+#define CELLULAR_MODEM_INFO_ICCID_SIZE 21
+#define CELLULAR_MODEM_INFO_MODEL_SIZE 16
+#define CELLULAR_MODEM_INFO_MANUFACTURER_SIZE 10
+
 /** Cellular access technologies */
 enum cellular_access_technology {
 	CELLULAR_ACCESS_TECHNOLOGY_GSM = 0,
@@ -50,6 +56,27 @@ struct cellular_network {
 	uint16_t *bands;
 	/** Size of bands */
 	uint16_t size;
+};
+
+struct cellular_signal {
+	/* RSSI signal */
+	int16_t rssi;
+	/* Bit Error Rate */
+	uint8_t ber;
+};
+
+struct cellular_modem_info
+{
+	/* International Mobile Equipment Identity */
+	uint8_t imei[CELLULAR_MODEM_INFO_IMEI_SIZE];
+	/* GSM model as a string */
+	uint8_t model[CELLULAR_MODEM_INFO_MODEL_SIZE];
+	/* Manufacturer name as a string */
+	uint8_t manufacturer[CELLULAR_MODEM_INFO_MANUFACTURER_SIZE];
+	/* International Mobile Subscriber Identity */
+	uint8_t imsi[CELLULAR_MODEM_INFO_IMSI_SIZE];
+	/* Integrated Circuit Card Identification Number (SIM) */
+	uint8_t iccid[CELLULAR_MODEM_INFO_ICCID_SIZE];
 };
 
 /**
@@ -89,6 +116,31 @@ int cellular_configure_networks(const struct device *dev,
  */
 int cellular_get_supported_networks(const struct device *dev,
 				    const struct cellular_network **networks, uint8_t *size);
+
+/**
+ * @brief Get signal for the device
+ *
+ * @param dev Cellular network device instance
+ * @param signal Pointer to a struct containing signal information
+ *
+ * @retval 0 if successful.
+ * @retval -ENOTSUP if API is not supported by cellular network device.
+ * @retval -ENODATA if device is not in a state where signal can be polled
+ * @retval Negative errno-code otherwise.
+ */
+int cellular_get_signal(const struct device *dev, struct cellular_signal * signal);
+
+/**
+ * @brief Get modem info for the device
+ *
+ * @param dev Cellular network device instance
+ * @param signal Pointer to a struct containing modem information
+ *
+ * @retval 0 if successful.
+ * @retval -ENOTSUP if API is not supported by cellular network device.
+ * @retval Negative errno-code otherwise.
+ */
+int cellular_get_modem_info(const struct device *dev, struct cellular_modem_info * modem_info);
 
 #ifdef __cplusplus
 }

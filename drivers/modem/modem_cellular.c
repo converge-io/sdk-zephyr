@@ -1917,3 +1917,23 @@ DT_INST_FOREACH_STATUS_OKAY(MODEM_CELLULAR_DEVICE_SWIR_HL7800)
 #define DT_DRV_COMPAT telit_me910g1
 DT_INST_FOREACH_STATUS_OKAY(MODEM_CELLULAR_DEVICE_TELIT_ME910G1)
 #undef DT_DRV_COMPAT
+
+
+int cellular_get_modem_info(const struct device *dev, struct cellular_modem_info * modem_info) {
+	struct modem_cellular_data * data = (struct modem_cellular_data*)dev->data;
+
+	memcpy(&modem_info->imei[0], data->imei[0], sizeof(modem_info->imei));
+	memcpy(&modem_info->imsi[0], data->imsi[0], sizeof(modem_info->imsi));
+	memcpy(&modem_info->iccid[0], data->iccid[0], sizeof(modem_info->iccid));
+}
+
+int cellular_get_signal(const struct device *dev, struct cellular_signal * signal) {
+	struct modem_cellular_data * data = (struct modem_cellular_data*)dev->data;
+
+	if ((data->state != MODEM_CELLULAR_STATE_AWAIT_REGISTERED) && (data->state != MODEM_CELLULAR_STATE_CARRIER_ON)) {
+		return -ENODATA;
+	}
+)
+	modem_info->rssi = data->rssi;
+	modem_info->ber = data->ber;
+}
