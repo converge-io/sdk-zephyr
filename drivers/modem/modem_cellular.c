@@ -830,6 +830,7 @@ static void modem_cellular_run_dial_script_event_handler(struct modem_cellular_d
 	switch (evt) {
 	case MODEM_CELLULAR_EVENT_TIMEOUT:
 		modem_chat_attach(&data->chat, data->dlci1_pipe);
+	case MODEM_CELLULAR_EVENT_SCRIPT_FAILED:
 		modem_chat_run_script_async(&data->chat, config->dial_chat_script);
 		break;
 
@@ -1488,6 +1489,9 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG?", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG?", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG?", ok_match),
+	/* MODEM_CHAT_SCRIPT_CMD_RESP("AT+QOPSCFG=\"scancontrol\",2,0,80000,0", ok_match), */
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+QCFG=\"band\",0,80000,0,1", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+QCFG=\"nwscanmode\",3,1", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGSN", imei_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGMM", cgmm_match),
@@ -1527,6 +1531,9 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg25_g_periodic_chat_script_cmds,
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG?", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG?", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG?", ok_match),
+			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+QNWINFO", allow_match),
+			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+QSPN", allow_match),
+			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+COPS?", allow_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CSQ", csq_match));
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_periodic_chat_script,

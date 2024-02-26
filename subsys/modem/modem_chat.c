@@ -47,7 +47,9 @@ static void modem_chat_log_received_command(struct modem_chat *chat)
 	log_buffer_pos = log_buffer_pos == 0 ? log_buffer_pos : log_buffer_pos - 1;
 	log_buffer[log_buffer_pos] = '\0';
 
-	LOG_DBG("%s", log_buffer);
+	if (strcmp(log_buffer, "OK") != 0) {
+		LOG_DBG("%s", log_buffer);
+	}
 }
 
 #else
@@ -130,7 +132,7 @@ static void modem_chat_script_next(struct modem_chat *chat, bool initial)
 		return;
 	}
 
-	LOG_DBG("%s: step: %u", chat->script->name, chat->script_chat_it);
+	/* LOG_DBG("%s: step: %u", chat->script->name, chat->script_chat_it); */
 
 	script_chat = &chat->script->script_chats[chat->script_chat_it];
 

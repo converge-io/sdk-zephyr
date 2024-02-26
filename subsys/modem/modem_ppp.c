@@ -235,7 +235,7 @@ static void modem_ppp_process_received_byte(struct modem_ppp *ppp, uint8_t byte)
 				break;
 			}
 
-			LOG_DBG("Receiving PPP frame");
+			/* LOG_DBG("Receiving PPP frame"); */
 			ppp->receive_state = MODEM_PPP_RECEIVE_STATE_WRITING;
 			net_pkt_cursor_init(ppp->rx_pkt);
 
@@ -247,7 +247,7 @@ static void modem_ppp_process_received_byte(struct modem_ppp *ppp, uint8_t byte)
 
 	case MODEM_PPP_RECEIVE_STATE_WRITING:
 		if (byte == MODEM_PPP_CODE_DELIMITER) {
-			LOG_DBG("Received PPP frame");
+			/* LOG_DBG("Received PPP frame"); */
 
 			/* Remove FCS */
 			net_pkt_remove_tail(ppp->rx_pkt, MODEM_PPP_FRAME_TAIL_SIZE);
