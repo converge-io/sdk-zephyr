@@ -37,6 +37,7 @@ enum modem_cellular_state {
 	MODEM_CELLULAR_STATE_OPEN_DLCI2,
 	MODEM_CELLULAR_STATE_RUN_DIAL_SCRIPT,
 	MODEM_CELLULAR_STATE_AWAIT_REGISTERED,
+	MODEM_CELLULAR_STATE_ESTABLISH_PDP,
 	MODEM_CELLULAR_STATE_CARRIER_ON,
 	MODEM_CELLULAR_STATE_INIT_POWER_OFF,
 	MODEM_CELLULAR_STATE_POWER_OFF_PULSE,
@@ -55,6 +56,7 @@ enum modem_cellular_event {
 	MODEM_CELLULAR_EVENT_TIMEOUT,
 	MODEM_CELLULAR_EVENT_REGISTERED,
 	MODEM_CELLULAR_EVENT_DEREGISTERED,
+	MODEM_CELLULAR_EVENT_PDP_ESTABLISHED,
 	MODEM_CELLULAR_EVENT_BUS_OPENED,
 	MODEM_CELLULAR_EVENT_BUS_CLOSED,
 };
@@ -127,6 +129,9 @@ struct modem_cellular_config {
 	const struct modem_chat_script *periodic_chat_script;
 	const struct modem_chat_script *power_down_script;
 	const struct modem_chat_script *get_signal_chat_script;
+
+	const struct modem_chat_script *init_pdp_script;
+	const struct modem_chat_script *check_pdp_script;
 };
 
 static const char *modem_cellular_state_str(enum modem_cellular_state state)
@@ -152,6 +157,8 @@ static const char *modem_cellular_state_str(enum modem_cellular_state state)
 		return "await registered";
 	case MODEM_CELLULAR_STATE_RUN_DIAL_SCRIPT:
 		return "run dial script";
+	case MODEM_CELLULAR_STATE_ESTABLISH_PDP:
+		return "establish pdp";
 	case MODEM_CELLULAR_STATE_CARRIER_ON:
 		return "carrier on";
 	case MODEM_CELLULAR_STATE_INIT_POWER_OFF:
@@ -190,6 +197,8 @@ static const char *modem_cellular_event_str(enum modem_cellular_event event)
 		return "registered";
 	case MODEM_CELLULAR_EVENT_DEREGISTERED:
 		return "deregistered";
+	case MODEM_CELLULAR_EVENT_PDP_ESTABLISHED:
+		return "pdp established";
 	case MODEM_CELLULAR_EVENT_BUS_OPENED:
 		return "bus opened";
 	case MODEM_CELLULAR_EVENT_BUS_CLOSED:
@@ -367,18 +376,26 @@ static void modem_cellular_chat_on_iccid(struct modem_chat *chat, char **argv, u
 	strncpy(data->iccid, (char *)argv[1], sizeof(data->iccid));
 }
 
+static void modem_cellular_on_cgact(struct modem_chat *chat, char **argv, uint16_t argc,
+					void *user_data)
+{
+	struct modem_cellular_data *data = (struct modem_cellular_data *)user_data;
+
+	if (argc != 2) {
+		return;
+	} else if(atoi(argv[2]) == 1) {
+		modem_cellular_delegate_event(data, MODEM_CELLULAR_EVENT_PDP_ESTABLISHED);
+	}
+}
+
 static bool modem_cellular_is_registered(struct modem_cellular_data *data)
 {
-	return (data->registration_status_gsm == 1)
-		|| (data->registration_status_gsm == 5)
-		|| (data->registration_status_gprs == 1)
-		|| (data->registration_status_gprs == 5)
-		|| (data->registration_status_lte == 1)
-		|| (data->registration_status_lte == 5);
+	return ((data->registration_status_gsm == 1) || (data->registration_status_gsm == 5)) &&
+	       ((data->registration_status_gprs == 1) || (data->registration_status_gprs == 5));
 }
 
 static void modem_cellular_chat_on_cxreg(struct modem_chat *chat, char **argv, uint16_t argc,
-					void *user_data)
+					 void *user_data)
 {
 	struct modem_cellular_data *data = (struct modem_cellular_data *)user_data;
 	uint8_t registration_status;
@@ -399,7 +416,7 @@ static void modem_cellular_chat_on_cxreg(struct modem_chat *chat, char **argv, u
 	} else if (strcmp(argv[0], "+CGREG: ") == 0) {
 		data->registration_status_gprs = registration_status;
 	} else {
-		data->registration_status_lte = registration_status;
+		return;
 	}
 
 	if (modem_cellular_is_registered(data)) {
@@ -424,7 +441,6 @@ MODEM_CHAT_MATCH_DEFINE(cgmr_match, "", "", modem_cellular_chat_on_cgmr);
 
 MODEM_CHAT_MATCHES_DEFINE(unsol_matches,
 			  MODEM_CHAT_MATCH("+CREG: ", ",", modem_cellular_chat_on_cxreg),
-			  MODEM_CHAT_MATCH("+CEREG: ", ",", modem_cellular_chat_on_cxreg),
 			  MODEM_CHAT_MATCH("+CGREG: ", ",", modem_cellular_chat_on_cxreg));
 
 MODEM_CHAT_MATCHES_DEFINE(abort_matches, MODEM_CHAT_MATCH("ERROR", "", NULL));
@@ -435,6 +451,8 @@ MODEM_CHAT_MATCHES_DEFINE(dial_abort_matches,
 			  MODEM_CHAT_MATCH("NO ANSWER", "", NULL),
 			  MODEM_CHAT_MATCH("NO CARRIER", "", NULL),
 			  MODEM_CHAT_MATCH("NO DIALTONE", "", NULL));
+
+MODEM_CHAT_MATCH_DEFINE(pdp_match, "+CGACT:", ",", modem_cellular_on_cgact);
 
 static void modem_cellular_log_state_changed(enum modem_cellular_state last_state,
 					     enum modem_cellular_state new_state)
@@ -879,7 +897,11 @@ static void modem_cellular_await_registered_event_handler(struct modem_cellular_
 		break;
 
 	case MODEM_CELLULAR_EVENT_REGISTERED:
-		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_CARRIER_ON);
+		if (config->init_pdp_script != NULL) {
+			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_ESTABLISH_PDP);
+		} else {
+			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_CARRIER_ON);
+		}
 		break;
 
 	case MODEM_CELLULAR_EVENT_SUSPEND:
@@ -894,6 +916,47 @@ static void modem_cellular_await_registered_event_handler(struct modem_cellular_
 static int modem_cellular_on_await_registered_state_leave(struct modem_cellular_data *data)
 {
 	modem_cellular_stop_timer(data);
+	return 0;
+}
+
+static int modem_cellular_establish_pdp_state_enter(struct modem_cellular_data *data)
+{
+	const struct modem_cellular_config *config =
+		(const struct modem_cellular_config *)data->dev->config;
+
+	modem_cellular_start_timer(data, K_SECONDS(5));
+	modem_chat_run_script_async(&data->chat, config->init_pdp_script);
+	return 0;
+}
+
+static void modem_cellular_establish_pdp_event_handler(struct modem_cellular_data *data,
+						    enum modem_cellular_event evt)
+{
+	const struct modem_cellular_config *config =
+		(const struct modem_cellular_config *)data->dev->config;
+
+	switch (evt) {
+	case MODEM_CELLULAR_EVENT_TIMEOUT:
+		modem_cellular_start_timer(data, K_SECONDS(5));
+		modem_chat_run_script_async(&data->chat, config->check_pdp_script);
+		break;
+
+	case MODEM_CELLULAR_EVENT_SUSPEND:
+		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_INIT_POWER_OFF);
+		break;
+
+	case MODEM_CELLULAR_EVENT_PDP_ESTABLISHED:
+		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_CARRIER_ON);
+		break;
+
+	default:
+		break;
+	}
+	return;
+}
+
+static int modem_cellular_establish_pdp_state_leave(struct modem_cellular_data *data)
+{
 	return 0;
 }
 
@@ -1096,6 +1159,10 @@ static int modem_cellular_on_state_enter(struct modem_cellular_data *data)
 		ret = modem_cellular_on_await_registered_state_enter(data);
 		break;
 
+	case MODEM_CELLULAR_STATE_ESTABLISH_PDP:
+		ret = modem_cellular_establish_pdp_state_enter(data);
+		break;
+
 	case MODEM_CELLULAR_STATE_CARRIER_ON:
 		ret = modem_cellular_on_carrier_on_state_enter(data);
 		break;
@@ -1155,6 +1222,10 @@ static int modem_cellular_on_state_leave(struct modem_cellular_data *data)
 
 	case MODEM_CELLULAR_STATE_AWAIT_REGISTERED:
 		ret = modem_cellular_on_await_registered_state_leave(data);
+		break;
+
+	case MODEM_CELLULAR_STATE_ESTABLISH_PDP:
+		ret = modem_cellular_establish_pdp_state_leave(data);
 		break;
 
 	case MODEM_CELLULAR_STATE_CARRIER_ON:
@@ -1242,6 +1313,10 @@ static void modem_cellular_event_handler(struct modem_cellular_data *data,
 
 	case MODEM_CELLULAR_STATE_AWAIT_REGISTERED:
 		modem_cellular_await_registered_event_handler(data, evt);
+		break;
+
+	case MODEM_CELLULAR_STATE_ESTABLISH_PDP:
+		modem_cellular_establish_pdp_event_handler(data, evt);
 		break;
 
 	case MODEM_CELLULAR_STATE_CARRIER_ON:
@@ -1480,7 +1555,7 @@ MODEM_CHAT_SCRIPT_DEFINE(quectel_bg95_periodic_chat_script,
 #if DT_HAS_COMPAT_STATUS_OKAY(quectel_eg25_g)
 MODEM_CHAT_SCRIPT_CMDS_DEFINE(
 	quectel_eg25_g_init_chat_script_cmds, MODEM_CHAT_SCRIPT_CMD_RESP("ATE0", ok_match),
-	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=4", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=1", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CMEE=1", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG=1", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG=1", ok_match),
@@ -1488,6 +1563,7 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG?", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG?", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG?", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGEREP", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGSN", imei_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGMM", cgmm_match),
@@ -1506,18 +1582,13 @@ MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_init_chat_script, quectel_eg25_g_init_ch
 			 abort_matches, modem_cellular_chat_callback_handler, 10);
 
 MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg25_g_dial_chat_script_cmds,
-			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+CGACT=0,1", allow_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGDCONT=1,\"IP\","
-							 "\""CONFIG_MODEM_CELLULAR_APN"\"",
-							 ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=1", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP_NONE("ATD*99***1#", 0),);
+			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+CGACT=0,1", allow_match),);
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_dial_chat_script, quectel_eg25_g_dial_chat_script_cmds,
 			 dial_abort_matches, modem_cellular_chat_callback_handler, 10);
 
 MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg25_g_power_down_script_cmds,
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=0", ok_match),
+		      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=0", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+QSCLK=1", ok_match),);
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_power_down_script, quectel_eg25_g_power_down_script_cmds,
@@ -1527,6 +1598,8 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg25_g_periodic_chat_script_cmds,
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG?", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG?", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG?", ok_match),
+			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+COPS?", ok_match),
+			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGACT?", ok_match),
 			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CSQ", csq_match));
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_periodic_chat_script,
@@ -1539,34 +1612,51 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg25_g_get_signal_chat_script_cmds,
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_get_signal_chat_script,
 			 quectel_eg25_g_get_signal_chat_script_cmds, abort_matches,
 			 modem_cellular_chat_callback_handler, 4);
+
+MODEM_CHAT_SCRIPT_CMDS_DEFINE(
+	quectel_eg25_g_init_pdp_script_cmds,
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGDCONT=1,\"IP\","
+				   "\""CONFIG_MODEM_CELLULAR_APN"\"",
+				   ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP_NONE("ATD*99#", 0),);
+
+MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_init_pdp_script, quectel_eg25_g_init_pdp_script_cmds,
+			 abort_matches, modem_cellular_chat_callback_handler, 10);
+
+
+MODEM_CHAT_SCRIPT_CMDS_DEFINE(
+	quectel_eg25_g_check_pdp_script_cmds,
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGACT?", pdp_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match));
+
+MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_check_pdp_script, quectel_eg25_g_check_pdp_script_cmds,
+			 abort_matches, modem_cellular_chat_callback_handler, 10);
+
+
 #endif
 
 #if DT_HAS_COMPAT_STATUS_OKAY(zephyr_gsm_ppp)
-MODEM_CHAT_SCRIPT_CMDS_DEFINE(zephyr_gsm_ppp_init_chat_script_cmds,
-			      MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100),
-			      MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100),
-			      MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100),
-			      MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("ATE0", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=4", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CMEE=1", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG=1", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG=1", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG=1", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG?", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG?", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG?", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGSN", imei_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGMM", cgmm_match),
-			      MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
-			      /* The 300ms delay after sending the AT+CMUX command is required
-			       * for some modems to ensure they get enough time to enter CMUX
-			       * mode before sending the first CMUX command. If this delay is
-			       * too short, modems have been observed to simply deadlock,
-			       * refusing to respond to any CMUX command.
-			       */
-			      MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT+CMUX=0,0,5,127", 300));
+MODEM_CHAT_SCRIPT_CMDS_DEFINE(
+	zephyr_gsm_ppp_init_chat_script_cmds, MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100),
+	MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100), MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100),
+	MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT", 100), MODEM_CHAT_SCRIPT_CMD_RESP("ATE0", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=4", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CMEE=1", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG=1", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG=1", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG=1", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CREG?", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CEREG?", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGREG?", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGSN", imei_match), MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGMM", cgmm_match), MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
+	/* The 300ms delay after sending the AT+CMUX command is required
+	 * for some modems to ensure they get enough time to enter CMUX
+	 * mode before sending the first CMUX command. If this delay is
+	 * too short, modems have been observed to simply deadlock,
+	 * refusing to respond to any CMUX command.
+	 */
+	MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT+CMUX=0,0,5,127", 300));
 
 MODEM_CHAT_SCRIPT_DEFINE(zephyr_gsm_ppp_init_chat_script, zephyr_gsm_ppp_init_chat_script_cmds,
 			 abort_matches, modem_cellular_chat_callback_handler, 10);
@@ -1825,6 +1915,8 @@ MODEM_CHAT_SCRIPT_DEFINE(telit_me910g1_dial_chat_script, telit_me910g1_dial_chat
 		.periodic_chat_script = &_CONCAT(DT_DRV_COMPAT, _periodic_chat_script),            \
 		.power_down_script = &quectel_eg25_g_power_down_script,                            \
 		.get_signal_chat_script = &_CONCAT(DT_DRV_COMPAT, _get_signal_chat_script),        \
+		.init_pdp_script = &quectel_eg25_g_init_pdp_script,                                \
+		.check_pdp_script = &quectel_eg25_g_check_pdp_script,                              \
 	};                                                                                         \
                                                                                                    \
 	PM_DEVICE_DT_INST_DEFINE(inst, modem_cellular_pm_action);                                  \
