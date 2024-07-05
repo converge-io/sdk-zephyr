@@ -35,9 +35,9 @@ enum modem_cellular_state {
 	MODEM_CELLULAR_STATE_CONNECT_CMUX,
 	MODEM_CELLULAR_STATE_OPEN_DLCI1,
 	MODEM_CELLULAR_STATE_OPEN_DLCI2,
-	MODEM_CELLULAR_STATE_RUN_DIAL_SCRIPT,
 	MODEM_CELLULAR_STATE_AWAIT_REGISTERED,
 	MODEM_CELLULAR_STATE_ESTABLISH_PDP,
+	MODEM_CELLULAR_STATE_RUN_DIAL_SCRIPT,
 	MODEM_CELLULAR_STATE_CARRIER_ON,
 	MODEM_CELLULAR_STATE_INIT_POWER_OFF,
 	MODEM_CELLULAR_STATE_POWER_OFF_PULSE,
@@ -381,7 +381,7 @@ static void modem_cellular_on_cgact(struct modem_chat *chat, char **argv, uint16
 {
 	struct modem_cellular_data *data = (struct modem_cellular_data *)user_data;
 
-	if (argc != 2) {
+	if (argc != 3) {
 		return;
 	} else if(atoi(argv[2]) == 1) {
 		modem_cellular_delegate_event(data, MODEM_CELLULAR_EVENT_PDP_ESTABLISHED);
@@ -814,7 +814,7 @@ static void modem_cellular_open_dlci2_event_handler(struct modem_cellular_data *
 {
 	switch (evt) {
 	case MODEM_CELLULAR_EVENT_DLCI2_OPENED:
-		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_RUN_DIAL_SCRIPT);
+		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_AWAIT_REGISTERED);
 		break;
 
 	case MODEM_CELLULAR_EVENT_SUSPEND:
@@ -829,44 +829,6 @@ static void modem_cellular_open_dlci2_event_handler(struct modem_cellular_data *
 static int modem_cellular_on_open_dlci2_state_leave(struct modem_cellular_data *data)
 {
 	modem_pipe_release(data->dlci2_pipe);
-	return 0;
-}
-
-static int modem_cellular_on_run_dial_script_state_enter(struct modem_cellular_data *data)
-{
-	/* Allow modem time to enter command mode before running dial script */
-	modem_cellular_start_timer(data, K_MSEC(100));
-	return 0;
-}
-
-static void modem_cellular_run_dial_script_event_handler(struct modem_cellular_data *data,
-							 enum modem_cellular_event evt)
-{
-	const struct modem_cellular_config *config =
-		(const struct modem_cellular_config *)data->dev->config;
-
-	switch (evt) {
-	case MODEM_CELLULAR_EVENT_TIMEOUT:
-		modem_chat_attach(&data->chat, data->dlci1_pipe);
-		modem_chat_run_script_async(&data->chat, config->dial_chat_script);
-		break;
-
-	case MODEM_CELLULAR_EVENT_SCRIPT_SUCCESS:
-		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_AWAIT_REGISTERED);
-		break;
-
-	case MODEM_CELLULAR_EVENT_SUSPEND:
-		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_INIT_POWER_OFF);
-		break;
-
-	default:
-		break;
-	}
-}
-
-static int modem_cellular_on_run_dial_script_state_leave(struct modem_cellular_data *data)
-{
-	modem_chat_release(&data->chat);
 	return 0;
 }
 
@@ -900,7 +862,7 @@ static void modem_cellular_await_registered_event_handler(struct modem_cellular_
 		if (config->init_pdp_script != NULL) {
 			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_ESTABLISH_PDP);
 		} else {
-			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_CARRIER_ON);
+			modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_RUN_DIAL_SCRIPT);
 		}
 		break;
 
@@ -946,7 +908,7 @@ static void modem_cellular_establish_pdp_event_handler(struct modem_cellular_dat
 		break;
 
 	case MODEM_CELLULAR_EVENT_PDP_ESTABLISHED:
-		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_CARRIER_ON);
+		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_RUN_DIAL_SCRIPT);
 		break;
 
 	default:
@@ -957,6 +919,44 @@ static void modem_cellular_establish_pdp_event_handler(struct modem_cellular_dat
 
 static int modem_cellular_establish_pdp_state_leave(struct modem_cellular_data *data)
 {
+	return 0;
+}
+
+static int modem_cellular_on_run_dial_script_state_enter(struct modem_cellular_data *data)
+{
+	/* Allow modem time to enter command mode before running dial script */
+	modem_cellular_start_timer(data, K_MSEC(100));
+	return 0;
+}
+
+static void modem_cellular_run_dial_script_event_handler(struct modem_cellular_data *data,
+							 enum modem_cellular_event evt)
+{
+	const struct modem_cellular_config *config =
+		(const struct modem_cellular_config *)data->dev->config;
+
+	switch (evt) {
+	case MODEM_CELLULAR_EVENT_TIMEOUT:
+		modem_chat_attach(&data->chat, data->dlci1_pipe);
+		modem_chat_run_script_async(&data->chat, config->dial_chat_script);
+		break;
+
+	case MODEM_CELLULAR_EVENT_SCRIPT_SUCCESS:
+		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_CARRIER_ON);
+		break;
+
+	case MODEM_CELLULAR_EVENT_SUSPEND:
+		modem_cellular_enter_state(data, MODEM_CELLULAR_STATE_INIT_POWER_OFF);
+		break;
+
+	default:
+		break;
+	}
+}
+
+static int modem_cellular_on_run_dial_script_state_leave(struct modem_cellular_data *data)
+{
+	modem_chat_release(&data->chat);
 	return 0;
 }
 
@@ -1576,13 +1576,14 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(
 	MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+QCCID", ccid_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("", ok_match),
+	MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+CGACT=0,1", allow_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP_NONE("AT+CMUX=0,0,5,127,10,3,30,10,2", 100));
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_init_chat_script, quectel_eg25_g_init_chat_script_cmds,
 			 abort_matches, modem_cellular_chat_callback_handler, 10);
 
 MODEM_CHAT_SCRIPT_CMDS_DEFINE(quectel_eg25_g_dial_chat_script_cmds,
-			      MODEM_CHAT_SCRIPT_CMD_RESP_MULT("AT+CGACT=0,1", allow_match),);
+					MODEM_CHAT_SCRIPT_CMD_RESP_NONE("ATD*99#", 0),);
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_dial_chat_script, quectel_eg25_g_dial_chat_script_cmds,
 			 dial_abort_matches, modem_cellular_chat_callback_handler, 10);
@@ -1617,8 +1618,7 @@ MODEM_CHAT_SCRIPT_CMDS_DEFINE(
 	quectel_eg25_g_init_pdp_script_cmds,
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CGDCONT=1,\"IP\","
 				   "\""CONFIG_MODEM_CELLULAR_APN"\"",
-				   ok_match),
-	MODEM_CHAT_SCRIPT_CMD_RESP_NONE("ATD*99#", 0),);
+				   ok_match),);
 
 MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_init_pdp_script, quectel_eg25_g_init_pdp_script_cmds,
 			 abort_matches, modem_cellular_chat_callback_handler, 10);
