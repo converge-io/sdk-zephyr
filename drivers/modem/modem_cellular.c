@@ -606,7 +606,7 @@ static void modem_cellular_state_timeout_handler(struct k_work *item)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(item);
 	struct modem_cellular_data *data =
-		CONTAINER_OF(dwork, struct modem_cellular_data, timeout_work);
+		CONTAINER_OF(dwork, struct modem_cellular_data, state_timeout_work);
 
 	modem_cellular_delegate_event(data, MODEM_CELLULAR_EVENT_STATE_TIMEOUT);
 }
