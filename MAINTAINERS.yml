@@ -969,6 +969,23 @@ Release Notes:
   labels:
     - "area: GPIO"
 
+"Drivers: GNSS":
+  status: maintained
+  maintainers:
+    - bjarki-andreasen
+  collaborators:
+    - tomi-font
+    - fabiobaltieri
+  files:
+    - drivers/gnss/
+    - include/zephyr/data/navigation.h
+    - include/zephyr/drivers/gnss.h
+    - include/zephyr/drivers/gnss/
+    - dts/bindings/gnss/
+    - include/zephyr/dt-bindings/gnss/
+  labels:
+    - "area: GNSS"
+
 "Drivers: HW Info":
   status: maintained
   maintainers:
