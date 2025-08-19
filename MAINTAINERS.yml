@@ -981,6 +981,7 @@ Release Notes:
     - include/zephyr/data/navigation.h
     - include/zephyr/drivers/gnss.h
     - include/zephyr/drivers/gnss/
+    - include/zephyr/gnss/
     - dts/bindings/gnss/
     - include/zephyr/dt-bindings/gnss/
   labels:
