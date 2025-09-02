@@ -3655,7 +3655,7 @@ int bt_gatt_exchange_mtu(struct bt_conn *conn,
 			 struct bt_gatt_exchange_params *params)
 {
 	int err;
-	LOG_INF("Zephyr bt_gatt_exchange_mtu");
+
 	__ASSERT(conn, "invalid parameter\n");
 	__ASSERT(params && params->func, "invalid parameters\n");
 
@@ -5449,7 +5449,6 @@ static void add_subscriptions(struct bt_conn *conn)
 static void gatt_exchange_mtu_func(struct bt_conn *conn, uint8_t err,
 				   struct bt_gatt_exchange_params *params)
 {
-	LOG_INF("gatt_exchange_mtu_func callback");
 	if (err) {
 		LOG_WRN("conn %p err 0x%02x", conn, err);
 	}
